@@ -1,26 +1,26 @@
-# On utilise l'image officielle Playwright qui contient déjà TOUTES les dépendances
+# Utilisation de l'image officielle Playwright (Ubuntu Jammy) - La plus stable
 FROM mcr.microsoft.com/playwright:v1.40.1-jammy
 
-# Dossier de travail
+# Créer le dossier de l'app
 WORKDIR /usr/src/app
 
-# Copie des fichiers de dépendances
+# Copier les fichiers de dépendances
 COPY package*.json ./
 
-# Installation propre (npm install est plus flexible que npm ci pour ce setup)
+# Installer les dépendances (npm install est plus tolérant que npm ci)
 RUN npm install --production
 
-# Installation forcée du navigateur Chromium dans le conteneur
+# Installer le navigateur Chromium
 RUN npx playwright install chromium
 
-# Copie de tout le reste du code (server.js, etc.)
+# Copier le reste du code
 COPY . .
 
-# Création du dossier pour les logs
+# Créer le dossier logs pour éviter les erreurs d'écriture
 RUN mkdir -p logs
 
-# Port utilisé par server.js
+# Port par défaut
 EXPOSE 3000
 
-# Lancement du serveur
+# Lancement
 CMD ["node", "server.js"]
