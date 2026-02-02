@@ -1,37 +1,26 @@
-FROM node:18-alpine
+# On utilise l'image officielle Playwright qui contient déjà TOUTES les dépendances
+FROM mcr.microsoft.com/playwright:v1.40.1-jammy
 
-# Install Playwright dependencies
-RUN apk add --no-cache \
-    chromium \
-    nss \
-    freetype \
-    harfbuzz \
-    ca-certificates \
-    ttf-freefont \
-    nodejs \
-    yarn
+# Dossier de travail
+WORKDIR /usr/src/app
 
-# Set Playwright to use installed chromium
-ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
-ENV PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium-browser
-
-# Create app directory
-WORKDIR /app
-
-# Copy package files
+# Copie des fichiers de dépendances
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Installation propre (npm install est plus flexible que npm ci pour ce setup)
+RUN npm install --production
 
-# Copy app files
+# Installation forcée du navigateur Chromium dans le conteneur
+RUN npx playwright install chromium
+
+# Copie de tout le reste du code (server.js, etc.)
 COPY . .
 
-# Create logs directory
+# Création du dossier pour les logs
 RUN mkdir -p logs
 
-# Expose port
+# Port utilisé par server.js
 EXPOSE 3000
 
-# Start server
+# Lancement du serveur
 CMD ["node", "server.js"]
