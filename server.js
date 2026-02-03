@@ -36,13 +36,16 @@ async function sendLinkedInMessage(profileUrl, message, options = {}) {
   try {
     log(`🚀 Démarrage envoi message vers: ${profileUrl}`);
     
-    // Lance navigateur avec options anti-détection
+    // Lance navigateur — headless:'new' + args obligatoires pour Linux sans display
     browser = await chromium.launch({
-      headless: true,
+      headless: 'new',
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+        '--no-zygote',
         '--disable-blink-features=AutomationControlled',
         '--disable-web-security'
       ]
@@ -275,8 +278,15 @@ async function checkLinkedInMessages() {
     log('📬 Vérification des messages LinkedIn...');
     
     browser = await chromium.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox']
+      headless: 'new',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--single-process',
+        '--no-zygote'
+      ]
     });
     
     if (!fs.existsSync(SESSION_FILE)) {
@@ -421,165 +431,189 @@ app.get('/check-messages', async (req, res) => {
   res.json(result);
 });
 
-// Endpoint setup login initial
-app.get('/setup-login', async (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="fr">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Configuration LinkedIn Bot</title>
-      <style>
-        body {
-          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-          max-width: 800px;
-          margin: 50px auto;
-          padding: 20px;
-          background: #f5f5f5;
-        }
-        .container {
-          background: white;
-          padding: 40px;
-          border-radius: 10px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-          color: #0077B5;
-          margin-bottom: 30px;
-        }
-        .step {
-          margin: 20px 0;
-          padding: 15px;
-          background: #f9f9f9;
-          border-left: 4px solid #0077B5;
-        }
-        button {
-          background: #0077B5;
-          color: white;
-          border: none;
-          padding: 15px 30px;
-          font-size: 16px;
-          border-radius: 5px;
-          cursor: pointer;
-          margin-top: 20px;
-        }
-        button:hover {
-          background: #005885;
-        }
-        .status {
-          margin-top: 20px;
-          padding: 15px;
-          border-radius: 5px;
-          display: none;
-        }
-        .status.success {
-          background: #d4edda;
-          color: #155724;
-          display: block;
-        }
-        .status.error {
-          background: #f8d7da;
-          color: #721c24;
-          display: block;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>🔧 Configuration LinkedIn Bot</h1>
-        
-        <div class="step">
-          <strong>📋 Étape 1:</strong> Ouvre LinkedIn dans un nouvel onglet et connecte-toi
-        </div>
-        
-        <div class="step">
-          <strong>⏱️ Étape 2:</strong> Attends d'être complètement connecté (tu vois ton fil d'actualité)
-        </div>
-        
-        <div class="step">
-          <strong>💾 Étape 3:</strong> Reviens ici et clique sur "Sauvegarder Session"
-        </div>
-        
-        <button onclick="saveSession()">
-          💾 Sauvegarder Session LinkedIn
-        </button>
-        
-        <div id="status" class="status"></div>
-      </div>
-      
-      <script>
-        async function saveSession() {
-          const statusDiv = document.getElementById('status');
-          statusDiv.textContent = '⏳ Sauvegarde en cours...';
-          statusDiv.className = 'status';
-          
-          try {
-            const response = await fetch('/save-session');
-            const result = await response.json();
-            
-            if (result.success) {
-              statusDiv.textContent = '✅ ' + result.message;
-              statusDiv.className = 'status success';
-            } else {
-              statusDiv.textContent = '❌ ' + result.error;
-              statusDiv.className = 'status error';
-            }
-          } catch (error) {
-            statusDiv.textContent = '❌ Erreur: ' + error.message;
-            statusDiv.className = 'status error';
-          }
-        }
-      </script>
-    </body>
-    </html>
-  `);
+
+// ──────────────────────────────────────────────────────────
+// /setup-login   →  page d'instructions + upload fichier session.
+//
+// Le login LinkedIn se fait LOCALEMENT via login-local.js.
+// Le fichier linkedin-session.json résultant est ensuite
+// uploadé sur ce serveur via le formulaire ci-dessous.
+// Aucun navigateur n'est lancé ici.
+// ──────────────────────────────────────────────────────────
+app.get('/setup-login', (req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup Session LinkedIn</title>
+  <style>
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body {
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      background:#f0f2f5; min-height:100vh;
+      display:flex; align-items:flex-start; justify-content:center;
+      padding:48px 20px;
+    }
+    .card {
+      background:#fff; border-radius:12px; width:100%; max-width:680px;
+      box-shadow:0 4px 20px rgba(0,0,0,.08); padding:40px;
+    }
+    h1 { color:#0077B5; font-size:1.6rem; margin-bottom:8px; }
+    .sub { color:#666; margin-bottom:28px; font-size:.95rem; }
+    .step {
+      display:flex; gap:16px; align-items:flex-start;
+      background:#f8fafc; border-radius:8px; padding:18px 20px;
+      margin-bottom:12px; border-left:4px solid #0077B5;
+    }
+    .num {
+      background:#0077B5; color:#fff; border-radius:50%;
+      width:28px; height:28px; min-width:28px;
+      display:flex; align-items:center; justify-content:center;
+      font-weight:700; font-size:.9rem;
+    }
+    .txt strong { display:block; margin-bottom:3px; }
+    .txt span  { color:#555; font-size:.9rem; line-height:1.5; }
+    code {
+      background:#eef2ff; color:#4338ca; padding:2px 7px;
+      border-radius:4px; font-size:.88rem;
+    }
+    hr { border:none; border-top:2px dashed #e2e8f0; margin:24px 0; }
+    .dropzone {
+      border:2px dashed #cbd5e1; border-radius:10px;
+      padding:36px 20px; text-align:center; cursor:pointer;
+      transition:all .2s; margin-top:8px;
+    }
+    .dropzone:hover,.dropzone.over { border-color:#0077B5; background:#eef7fb; }
+    .dropzone input { display:none; }
+    .dropzone .ico { font-size:2rem; margin-bottom:8px; }
+    .dropzone p  { color:#475569; font-size:.92rem; }
+    .dropzone p strong { color:#0077B5; }
+    .status { margin-top:16px; padding:14px 18px; border-radius:8px; display:none; font-size:.92rem; }
+    .status.ok  { background:#dcfce7; color:#166534; display:block; }
+    .status.err { background:#fee2e2; color:#991b1b; display:block; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>&#128135; Configuration de la session LinkedIn</h1>
+  <p class="sub">Le bot ne peut pas se connecter lui-même depuis le serveur cloud.<br>
+     Tu fais le login une seule fois sur ta machine, puis tu envoyes le fichier ici.</p>
+
+  <div class="step">
+    <div class="num">1</div>
+    <div class="txt">
+      <strong>Télécharge login-local.js</strong>
+      <span>Il est fourni avec le projet, même dossier que <code>server.js</code>.</span>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <div class="txt">
+      <strong>Exécute dans ton terminal</strong>
+      <span><code>node login-local.js</code><br>
+      Un Chrome s'ouvre — connecte-toi à LinkedIn normalement.<br>
+      Après 30 s un fichier <code>linkedin-session.json</code> apparaît.</span>
+    </div>
+  </div>
+
+  <div class="step">
+    <div class="num">3</div>
+    <div class="txt">
+      <strong>Upload le fichier ci-dessous</strong>
+      <span>Glisse <code>linkedin-session.json</code> sur la zone, ou clique pour le choisir.</span>
+    </div>
+  </div>
+
+  <hr>
+
+  <div class="dropzone" id="dz" onclick="document.getElementById('fi').click()">
+    <div class="ico">&#128193;</div>
+    <p><strong>Glisse linkedin-session.json ici</strong></p>
+    <p>ou clique pour choisir le fichier</p>
+    <input type="file" id="fi" accept=".json">
+  </div>
+  <div class="status" id="st"></div>
+</div>
+
+<script>
+const dz=document.getElementById('dz'),
+      fi=document.getElementById('fi'),
+      st=document.getElementById('st');
+
+function show(m,c){st.textContent=m;st.className='status '+c;}
+
+async function upload(f){
+  if(!f||!f.name.endsWith('.json')){show('❌ Fichier .json requis.','err');return;}
+  show('⏳ Upload en cours…','');st.style.display='block';
+  const fd=new FormData(); fd.append('session',f,'linkedin-session.json');
+  try{
+    const r=await fetch('/upload-session',{method:'POST',body:fd});
+    const d=await r.json();
+    show(d.success?'✅ Session uploadée — le bot est prêt !':'❌ '+d.error, d.success?'ok':'err');
+  }catch(e){show('❌ Erreur réseau : '+e.message,'err');}
+}
+
+fi.addEventListener('change',e=>upload(e.target.files[0]));
+dz.addEventListener('dragover', e=>{e.preventDefault();dz.classList.add('over');});
+dz.addEventListener('dragleave',()=>dz.classList.remove('over'));
+dz.addEventListener('drop',     e=>{e.preventDefault();dz.classList.remove('over');upload(e.dataTransfer.files[0]);});
+</script>
+</body>
+</html>`);
 });
 
-// Endpoint sauvegarde session
-app.get('/save-session', async (req, res) => {
-  let browser;
-  
-  try {
-    log('🔐 Tentative de sauvegarde session LinkedIn...');
-    
-    browser = await chromium.launch({ 
-      headless: false,
-      args: ['--no-sandbox']
-    });
-    
-    const context = await browser.newContext({
-      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      locale: 'fr-FR'
-    });
-    
-    const page = await context.newPage();
-    await page.goto('https://www.linkedin.com/feed/');
-    
-    log('⏳ Attente 60 secondes pour login manuel...');
-    await page.waitForTimeout(60000);
-    
-    // Sauvegarde
-    await context.storageState({ path: SESSION_FILE });
-    await browser.close();
-    
-    log('✅ Session LinkedIn sauvegardée avec succès!');
-    
-    res.json({
-      success: true,
-      message: 'Session LinkedIn sauvegardée! Le bot est prêt à être utilisé.'
-    });
-    
-  } catch (error) {
-    log(`❌ Erreur sauvegarde session: ${error.message}`, 'error');
-    
-    if (browser) await browser.close();
-    
-    res.json({
-      success: false,
-      error: error.message
-    });
-  }
+// ──────────────────────────────────────────────────────────
+// POST /upload-session  →  reçoit le fichier JSON (multipart),
+// écrit linkedin-session.json sur le disque du serveur.
+// Pas de dépendance externe (pas de multer) — le fichier
+// est petit (< 50 KB).
+// ──────────────────────────────────────────────────────────
+app.post('/upload-session', (req, res) => {
+  const chunks = [];
+  req.on('data',  c => chunks.push(c));
+  req.on('end', () => {
+    try {
+      const raw      = Buffer.concat(chunks).toString('utf8');
+      const ct       = req.headers['content-type'] || '';
+      const boundary = ct.includes('boundary=') ? ct.split('boundary=')[1] : null;
+
+      if (!boundary) throw new Error('Pas de boundary multipart dans la requête');
+
+      // découpe par boundary
+      const parts = raw.split('--' + boundary);
+      let jsonStr = null;
+
+      for (const part of parts) {
+        if (!part.includes('filename')) continue;
+        // le contenu commence après le premier \r\n\r\n
+        const sep = '\r\n\r\n';
+        const idx = part.indexOf(sep);
+        if (idx === -1) continue;
+
+        let body = part.substring(idx + sep.length);
+        // retirer le \r\n final avant le prochain boundary
+        if (body.endsWith('\r\n')) body = body.slice(0, -2);
+
+        jsonStr = body;
+        break;
+      }
+
+      if (!jsonStr) throw new Error('Fichier session non trouvé dans la requête');
+
+      // vérifie JSON valide avant d'écrire
+      JSON.parse(jsonStr);
+
+      fs.writeFileSync(SESSION_FILE, jsonStr);
+      log('✅ Session LinkedIn uploadée via interface web');
+      res.json({ success: true });
+
+    } catch (e) {
+      log('❌ upload-session : ' + e.message, 'error');
+      res.json({ success: false, error: e.message });
+    }
+  });
 });
 
 // Health check
